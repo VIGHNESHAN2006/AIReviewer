@@ -14,3 +14,5 @@ print("Result:", result)
 
 average = calculate_average(100, 10)
 print("Average:", average)
+def calculate_discount(price, discount):
+    return price - price * discount
