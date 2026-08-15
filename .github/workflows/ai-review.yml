@@ -5,11 +5,16 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  models: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -23,5 +28,8 @@ jobs:
 
       - name: Run tests
         run: python -m pytest
+
+      - name: Run AI reviewer
+        run: python reviewer.py
         env:
-          PYTHONPATH: .
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
