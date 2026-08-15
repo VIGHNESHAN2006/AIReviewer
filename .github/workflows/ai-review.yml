@@ -8,13 +8,13 @@ on:
 permissions:
   contents: read
   models: read
+  issues: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -28,8 +28,13 @@ jobs:
 
       - name: Run tests
         run: python -m pytest
+        env:
+          PYTHONPATH: .
 
       - name: Run AI reviewer
         run: python reviewer.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTIONS: "true"
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
