@@ -12,7 +12,6 @@ The AI PR Assistant:
 4. Identifies potential bugs and code-quality issues.
 5. Classifies issues by severity.
 6. Calculates an overall code-quality score.
-7. Posts the review back to the GitHub Pull Request.
 
 ## 🏗️ Architecture
 
