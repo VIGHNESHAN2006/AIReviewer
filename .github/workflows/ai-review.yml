@@ -31,10 +31,38 @@ jobs:
         env:
           PYTHONPATH: .
 
+      - name: Prepare code for AI review
+        run: |
+          {
+            echo "You are a professional Python code reviewer."
+            echo ""
+            echo "Review the following Python project files."
+            echo "Find bugs, runtime errors, security problems,"
+            echo "performance problems and code quality issues."
+            echo ""
+            echo "Return a concise Markdown review."
+            echo "Identify severity as CRITICAL, HIGH, MEDIUM, or LOW."
+            echo "Give the overall quality score out of 100."
+            echo ""
+            echo "================ PROJECT FILES ================"
+            find project -name "*.py" -type f -print -exec sh -c 'echo; echo "===== $1 ====="; cat "$1"' _ {} \;
+          } > review_prompt.txt
+
       - name: Run AI reviewer
-        run: python reviewer.py
+        id: ai
+        uses: actions/ai-inference@v1
+        with:
+          prompt-file: ./review_prompt.txt
+          model: openai/gpt-4o
+          max-completion-tokens: 2000
+          temperature: 0.1
+
+      - name: Post AI review to PR
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTIONS: "true"
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          REVIEW: ${{ steps.ai.outputs.response }}
+        run: |
+          gh api \
+            --method POST \
+            "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -f body="$REVIEW"
