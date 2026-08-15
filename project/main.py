@@ -1,9 +1,7 @@
 def divide(a, b):
-    return a / b
     if b == 0:
         raise ValueError("Cannot divide by zero")
     return a / b
-
 
 def calculate_average(total, count):
     if count == 0:
