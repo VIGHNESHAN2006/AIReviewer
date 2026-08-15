@@ -2,32 +2,139 @@ import os
 import json
 import requests
 
-project_folder = "project"
+
+PROJECT_FOLDER = "project"
 
 all_reviews = []
 
-for root, dirs, files in os.walk(project_folder):
 
-    for file in files:
+# ============================================================
+# AI FUNCTION
+# ============================================================
 
-        if file.endswith(".py"):
+def ask_ai(prompt):
+    """
+    Use GitHub Models inside GitHub Actions.
+    Use Ollama locally when running on your own PC.
+    """
 
-            path = os.path.join(root, file)
+    # --------------------------------------------------------
+    # GITHUB ACTIONS
+    # --------------------------------------------------------
 
-            with open(path, "r", encoding="utf-8") as f:
-                code = f.read()
+    if os.getenv("GITHUB_ACTIONS") == "true":
 
-            prompt = f"""
+        token = os.getenv("GITHUB_TOKEN")
+
+        if not token:
+            raise RuntimeError("GITHUB_TOKEN is not available.")
+
+        response = requests.post(
+            "https://models.github.ai/inference/chat/completions",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/vnd.github+json"
+            },
+            json={
+                "model": "openai/gpt-4o-mini",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a professional Python code reviewer. "
+                            "Return only valid JSON."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0.1,
+                "max_tokens": 2000
+            },
+            timeout=300
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        return data["choices"][0]["message"]["content"].strip()
+
+    # --------------------------------------------------------
+    # LOCAL OLLAMA
+    # --------------------------------------------------------
+
+    response = requests.post(
+        "http://localhost:11434/api/generate",
+        json={
+            "model": "qwen2.5-coder:7b",
+            "prompt": prompt,
+            "stream": False
+        },
+        timeout=300
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    return data.get("response", "").strip()
+
+
+# ============================================================
+# CLEAN AI RESPONSE
+# ============================================================
+
+def clean_json_response(response):
+    """
+    Remove accidental markdown code fences and extract JSON.
+    """
+
+    response = response.strip()
+
+    if response.startswith("```json"):
+        response = response[7:]
+
+    elif response.startswith("```"):
+        response = response[3:]
+
+    if response.endswith("```"):
+        response = response[:-3]
+
+    response = response.strip()
+
+    # Find JSON object if the model added extra text
+    start = response.find("{")
+    end = response.rfind("}")
+
+    if start != -1 and end != -1:
+        response = response[start:end + 1]
+
+    return response
+
+
+# ============================================================
+# CREATE REVIEW PROMPT
+# ============================================================
+
+def create_prompt(path, code):
+
+    return f"""
 You are a professional Python code reviewer.
 
-Review this Python file:
+Review the following Python file.
 
-FILE: {path}
+FILE:
+{path}
 
 CODE:
 {code}
 
 Find:
+
 1. Bugs
 2. Potential runtime errors
 3. Security problems
@@ -36,25 +143,35 @@ Find:
 
 Return ONLY valid JSON.
 
-Use exactly this format:
+Use exactly this structure:
 
 {{
     "issues": [
         {{
             "severity": "CRITICAL",
             "type": "bug",
-            "line": 1,
+            "line": 10,
             "message": "Short explanation of the problem",
-            "suggestion": "How to fix it"
+            "suggestion": "How to fix the problem"
         }}
     ]
 }}
 
-Severity must be one of:
-CRITICAL, HIGH, MEDIUM, LOW
+Severity MUST be one of:
 
-Type must be one of:
-bug, security, performance, code_quality
+CRITICAL
+HIGH
+MEDIUM
+LOW
+
+Type MUST be one of:
+
+bug
+security
+performance
+code_quality
+
+The line number should be the approximate line where the problem occurs.
 
 If there are no issues, return:
 
@@ -62,145 +179,239 @@ If there are no issues, return:
     "issues": []
 }}
 
-Do not include markdown.
-Do not include ```json.
-Return JSON only.
+IMPORTANT:
+
+- Return JSON only.
+- Do not use Markdown.
+- Do not use ```json.
+- Do not add explanations outside the JSON.
 """
 
-            print("\nReviewing:", path)
-            print("Waiting for Ollama...")
 
-            try:
+# ============================================================
+# REVIEW PYTHON FILE
+# ============================================================
 
-                response = requests.post(
-                    "http://localhost:11434/api/generate",
-                    json={
-                        "model": "qwen2.5-coder:7b",
-                        "prompt": prompt,
-                        "stream": False
-                    },
-                    timeout=300
-                )
+def review_file(path):
 
-                response.raise_for_status()
+    print()
+    print("=" * 60)
+    print("Reviewing:", path)
+    print("=" * 60)
 
-                result = response.json()
+    try:
 
-                ai_response = result.get("response", "").strip()
+        with open(path, "r", encoding="utf-8") as file:
+            code = file.read()
 
-                if not ai_response:
+    except Exception as error:
 
-                    print("WARNING: Ollama returned an empty response.")
-                    print("Skipping:", path)
-                    continue
+        print("ERROR reading file:")
+        print(error)
 
-                # Remove accidental markdown fences
-                if ai_response.startswith("```json"):
-                    ai_response = ai_response[7:]
+        return
 
-                if ai_response.startswith("```"):
-                    ai_response = ai_response[3:]
+    prompt = create_prompt(path, code)
 
-                if ai_response.endswith("```"):
-                    ai_response = ai_response[:-3]
+    print("Waiting for AI...")
 
-                ai_response = ai_response.strip()
+    try:
 
-                try:
+        ai_response = ask_ai(prompt)
 
-                    review = json.loads(ai_response)
+    except Exception as error:
 
-                except json.JSONDecodeError:
+        print("ERROR communicating with AI:")
+        print(error)
 
-                    print("WARNING: Ollama did not return valid JSON.")
-                    print("Raw response:")
-                    print(ai_response)
+        return
 
-                    print("Skipping:", path)
-                    continue
+    if not ai_response:
 
-                all_reviews.append({
-                    "file": path,
-                    "review": review
-                })
+        print("WARNING: AI returned an empty response.")
+        return
 
-                print("\n" + "=" * 60)
-                print("AI REVIEW:", path)
-                print("=" * 60)
-                print(json.dumps(review, indent=4))
+    ai_response = clean_json_response(ai_response)
 
-            except requests.exceptions.RequestException as e:
+    try:
 
-                print("ERROR communicating with Ollama:")
-                print(e)
+        review = json.loads(ai_response)
 
-                continue
+    except json.JSONDecodeError:
+
+        print("WARNING: AI returned invalid JSON.")
+
+        print("Raw response:")
+        print(ai_response)
+
+        return
+
+    # Make sure the expected structure exists
+    if not isinstance(review, dict):
+        print("WARNING: Invalid review format.")
+        return
+
+    if "issues" not in review:
+        review["issues"] = []
+
+    all_reviews.append(
+        {
+            "file": path,
+            "review": review
+        }
+    )
+
+    print()
+    print("AI REVIEW")
+    print("-" * 60)
+
+    print(json.dumps(review, indent=4))
 
 
 # ============================================================
-# PR REVIEW SUMMARY
+# FIND PYTHON FILES
 # ============================================================
 
-critical = 0
-high = 0
-medium = 0
-low = 0
+def find_python_files():
 
-for item in all_reviews:
+    python_files = []
 
-    for issue in item["review"].get("issues", []):
+    if not os.path.exists(PROJECT_FOLDER):
 
-        severity = issue.get("severity", "LOW")
+        print(
+            f"WARNING: Project folder '{PROJECT_FOLDER}' "
+            "does not exist."
+        )
 
-        if severity == "CRITICAL":
-            critical += 1
+        return python_files
 
-        elif severity == "HIGH":
-            high += 1
+    for root, dirs, files in os.walk(PROJECT_FOLDER):
 
-        elif severity == "MEDIUM":
-            medium += 1
+        for file in files:
 
-        elif severity == "LOW":
-            low += 1
+            if file.endswith(".py"):
 
+                path = os.path.join(root, file)
 
-# ============================================================
-# SCORE
-# ============================================================
+                python_files.append(path)
 
-score = 100
-
-score -= critical * 30
-score -= high * 20
-score -= medium * 10
-score -= low * 3
-
-score = max(0, score)
+    return python_files
 
 
 # ============================================================
-# FINAL PR REPORT
+# MAIN REVIEW
 # ============================================================
 
-print("\n" + "=" * 60)
-print("PR REVIEW SUMMARY")
-print("=" * 60)
+def main():
 
-print(f"Files reviewed: {len(all_reviews)}")
-print(f"Critical: {critical}")
-print(f"High:     {high}")
-print(f"Medium:   {medium}")
-print(f"Low:      {low}")
+    print()
+    print("=" * 60)
+    print("AI CODE REVIEWER")
+    print("=" * 60)
 
-print(f"\nOverall score: {score}/100")
+    python_files = find_python_files()
 
-if critical > 0 or high > 0:
+    print(f"Python files found: {len(python_files)}")
 
-    print("\n❌ CHANGES REQUESTED")
-    print("Critical or high-severity issues must be fixed.")
+    if not python_files:
 
-else:
+        print("No Python files found.")
+        return
 
-    print("\n✅ APPROVED")
-    print("No critical or high-severity issues found.")
+    for path in python_files:
+
+        review_file(path)
+
+
+    # ========================================================
+    # SUMMARY COUNTERS
+    # ========================================================
+
+    critical = 0
+    high = 0
+    medium = 0
+    low = 0
+
+
+    for item in all_reviews:
+
+        issues = item["review"].get("issues", [])
+
+        for issue in issues:
+
+            severity = issue.get(
+                "severity",
+                "LOW"
+            ).upper()
+
+            if severity == "CRITICAL":
+                critical += 1
+
+            elif severity == "HIGH":
+                high += 1
+
+            elif severity == "MEDIUM":
+                medium += 1
+
+            elif severity == "LOW":
+                low += 1
+
+
+    # ========================================================
+    # SCORE
+    # ========================================================
+
+    score = 100
+
+    score -= critical * 30
+    score -= high * 20
+    score -= medium * 10
+    score -= low * 3
+
+    score = max(0, score)
+
+
+    # ========================================================
+    # FINAL REPORT
+    # ========================================================
+
+    print()
+    print("=" * 60)
+    print("PR REVIEW SUMMARY")
+    print("=" * 60)
+
+    print(f"Files reviewed: {len(all_reviews)}")
+    print(f"Critical:       {critical}")
+    print(f"High:            {high}")
+    print(f"Medium:          {medium}")
+    print(f"Low:             {low}")
+
+    print()
+    print(f"Overall score: {score}/100")
+
+
+    if critical > 0 or high > 0:
+
+        print()
+        print("❌ CHANGES REQUESTED")
+        print(
+            "Critical or high-severity issues "
+            "must be fixed."
+        )
+
+    else:
+
+        print()
+        print("✅ APPROVED")
+        print(
+            "No critical or high-severity issues found."
+        )
+
+
+# ============================================================
+# PROGRAM ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+
+    main()
