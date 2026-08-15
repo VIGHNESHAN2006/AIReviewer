@@ -3,7 +3,6 @@ def divide(a, b):
         raise ValueError("Cannot divide by zero")
     return a / b
 
-
 def calculate_average(total, count):
     if count == 0:
         raise ValueError("Cannot calculate average with zero count")
