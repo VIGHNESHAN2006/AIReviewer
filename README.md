@@ -1,67 +1,34 @@
 # 🤖 AI PR Assistant
 
-An AI-powered GitHub Pull Request review assistant that analyzes code changes and provides structured code-quality feedback.
+An AI-powered GitHub Pull Request review assistant that analyzes Python code and provides structured code-quality feedback.
 
 ## 🚀 What It Does
 
 The AI PR Assistant:
 
-1. Detects changed files in a GitHub Pull Request.
-2. Downloads the changed source code.
-3. Sends the code to a local AI model using Ollama.
-4. Identifies potential bugs and code-quality issues.
-5. Classifies issues by severity.
-6. Calculates an overall code-quality score.
-7. Posts the review back to the GitHub Pull Request.
+1. Detects Python source files in the project.
+2. Sends the code to an AI model for analysis.
+3. Identifies potential bugs and code-quality issues.
+4. Classifies issues by severity.
+5. Calculates an overall code-quality score.
+6. Produces a structured review summary.
+7. Integrates with GitHub Actions for automated PR checks.
 
 ## 🏗️ Architecture
 
-GitHub Pull Request
-↓
-Python PR Assistant
-↓
-GitHub REST API
-↓
-Changed Source Code
-↓
-Ollama / Qwen2.5-Coder
-↓
-AI Code Analysis
-↓
-Severity Classification + Score
-↓
-GitHub PR Review
-
-## 🛠️ Technologies
-
-- Python
-- Git & GitHub
-- GitHub REST API
-- Ollama
-- Qwen2.5-Coder
-- JSON
-- PowerShell
-- pytest
-- GitHub Actions
-
-## 📁 Project Structure
-
 ```text
-AIReviewer/
-│
-├── project/
-│   ├── main.py
-│   └── database.py
-│
-├── reviewer.py
-├── tests/
-│   └── test_main.py
-│
-├── .github/
-AI reviewer workflow test.
-│   └── workflows/
-│       └── tests.yml
-│
-├── .gitignore
-└── README.md
-AI reviewer workflow test.
+GitHub Pull Request
+        ↓
+GitHub Actions
+        ↓
+Python AI Reviewer
+        ↓
+AI Model
+        ↓
+Code Analysis
+        ↓
+Severity Classification
+        ↓
+Quality Score
+        ↓
+PR Review Report
